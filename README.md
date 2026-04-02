@@ -1,6 +1,16 @@
+# GPU-Accelerated Shape Recognition Using Image Processing and Fourier Descriptors
+
+The goal of this project is to build a GPU-accelerated image processing pipeline that can classify simple geometric shapes (circles, squares, and triangles) from an input image. The algorithm is from a research gate publication [1] that developed the pipeline that consist of the following stages: grayscale conversion, Gaussian blur for noise reduction, Sobel edge detection to isolate shape boundaries, contour extraction to trace the boundary as an ordered set of points, a 1D FFT on the contour signal to produce Fourier Descriptors, and finally a classifier that interprets those descriptors to identify the shape. A previous implementation of this pipeline was demonstrated by Chess Recognition Enhanced and Parallelized Engine (CREPE) Project [2] on chess pieces. 
+
+References
+________________________________________
+1.	https://www.researchgate.net/publication/263951637_Fast_Generalized_Fourier_Descriptor_for_object_recognition_of_image_using_CUDA
+2.	https://github.com/Kawaboongawa/CREPE
+
+# Stage 1:
 # GPU Image Pre-Processing Pipeline
 
-A CUDA-accelerated image pre-processing pipeline for geometric shape classification.
+A CUDA-accelerated image preprocessing pipeline for geometric shape classification.
 Uses **NPP** for grayscale conversion and Gaussian blur, and **cuFFT** for
 frequency-domain edge detection.
 
@@ -107,19 +117,13 @@ Exit code 0 = all pass, 1 = one or more failures.
 
 ## CPU Reference (no GPU required)
 
-A CPU-only pipeline for timing comparison and validation on machines without a GPU.
+A CPU only pipeline for timing comparison and validation on machines without a GPU.
 Uses a separable box blur and a 3×3 Laplacian edge detector.
 
 ```bash
 make cpu_reference
 make test_cpu
 ```
-
-Outputs: `cpu_1_gray.pgm`, `cpu_2_blurred.pgm`, `cpu_3_edges.pgm`
-
-Note: the CPU edge output looks different from the GPU output by design — the
-Laplacian is a spatial second-derivative operator (sparse thin edges) while the
-cuFFT high-pass filter retains all high-frequency content above the threshold.
 
 ## Benchmark
 
