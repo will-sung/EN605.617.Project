@@ -8,7 +8,7 @@ CXX_FLAGS  := -std=c++17 -O2
 LDFLAGS := -L$(CUDA_PATH)/lib64 \
            -lnppig -lnppif -lnppicc -lnppc -lcudart
 
-CU_SRCS  := main.cu npp_stages.cu
+CU_SRCS  := main.cu npp_stages.cu sobel_threshold.cu
 CPP_SRCS := image_io.cpp
 
 OBJ_CU  := $(CU_SRCS:.cu=.o)
@@ -42,11 +42,11 @@ test: all
 	@echo ">>> Generating test image..."
 	./$(GEN_IMG)
 	@echo ""
-	@echo ">>> Pass 1: blur=3..."
-	./$(PIPELINE) test_shapes.ppm 3
+	@echo ">>> Pass 1: blur=3 thresh=40..."
+	./$(PIPELINE) test_shapes.ppm 3 40
 	@echo ""
-	@echo ">>> Pass 2: blur=5..."
-	./$(PIPELINE) test_shapes.ppm 5
+	@echo ">>> Pass 2: blur=5 thresh=35..."
+	./$(PIPELINE) test_shapes.ppm 5 35
 	@echo ""
 	@echo ">>> Validating outputs..."
 	./$(VALIDATE) 512 512
@@ -73,4 +73,4 @@ test_cpu: cpu_reference $(GEN_IMG)
 clean:
 	rm -f $(OBJ_CU) $(OBJ_CPP) $(PIPELINE) $(GEN_IMG) $(VALIDATE) \
 	      cpu_reference out_*.pgm test_shapes.ppm *.o \
-	      benchmark_configs.png benchmark_scaling.png
+	      benchmark_configs.png benchmark_scaling.png cpu_pass2_*.pgm

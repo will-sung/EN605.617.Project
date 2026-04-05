@@ -104,13 +104,14 @@ int main(int argc, char* argv[])
     std::cout << "=== Pipeline Output Validation ===\n";
     std::cout << "Expected: " << exp_w << "x" << exp_h << "\n\n";
 
-    PGM gray, blurred, edges;
+    PGM gray, blurred, edges, binary;
     bool ok = true;
 
     std::cout << "--- Loading files ---\n";
     ok &= load_pgm("out_1_gray.pgm",    gray);
     ok &= load_pgm("out_2_blurred.pgm", blurred);
     ok &= load_pgm("out_3_edges.pgm",   edges);
+    ok &= load_pgm("out_4_binary.pgm",  binary);
 
     if (!ok) {
         std::cerr << "[ABORT] Failed to load output files.\n";
@@ -122,10 +123,12 @@ int main(int argc, char* argv[])
     check(gray.width    == exp_w && gray.height    == exp_h, "gray    " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
     check(blurred.width == exp_w && blurred.height == exp_h, "blurred " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
     check(edges.width   == exp_w && edges.height   == exp_h, "edges   " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
+    check(binary.width  == exp_w && binary.height  == exp_h, "binary  " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
 
     const Stats sg = compute_stats(gray);
     const Stats sb = compute_stats(blurred);
     const Stats se = compute_stats(edges);
+    const Stats sn = compute_stats(binary);
 
     std::cout << "\n--- Grayscale (out_1_gray.pgm) ---\n";
     print_stats("gray   ", sg);
@@ -145,6 +148,13 @@ int main(int argc, char* argv[])
     check(se.mean < sg.mean,   "mean < gray (flat regions near zero in Sobel output)");
     check(se.maxv > 50,        "max > 50 (edges detected)");
     check(se.stddev > 20.0,    "stddev > 20 (edge/flat contrast)");
+
+    std::cout << "\n--- Binary edge map (out_4_binary.pgm) ---\n";
+    print_stats("binary ", sn);
+    check(sn.maxv == 255,                          "max == 255 (has edge pixels)");
+    check(sn.minv == 0,                            "min == 0 (has background pixels)");
+    check(sn.nonzero_frac >  0.005,                "nonzero > 0.5% (edges present)");
+    check(sn.nonzero_frac <  0.15,                 "nonzero < 15% (not noise-flooded)");
 
     std::cout << "\n=== " << g_pass << " passed, " << g_fail << " failed ===\n";
     return (g_fail > 0) ? 1 : 0;

@@ -1,7 +1,7 @@
 // npp_stages.cu – NPP image processing stages
-// stage 1: RGBA -> grayscale (nppiRGBToGray)
-// stage 2: gaussian blur    (nppiFilterGauss)
-// stage 3: Sobel edge detection (nppiFilterSobelHorizBorder / VertBorder + magnitude kernel)
+// stage 1: RGBA -> grayscale
+// stage 2: gaussian blur
+// stage 3: Sobel edge detection
 
 #include "pipeline.h"
 
@@ -148,9 +148,7 @@ GrayImage npp_gaussian_blur(const GrayImage& src, int radius)
     return out;
 }
 
-// --- stage 3 helpers ---------------------------------------------------
-
-// Compute gradient magnitude: clamp(sqrt(Gx^2 + Gy^2), 0, 255) -> 8u
+// clamp(sqrt(Gx^2 + Gy^2), 0, 255) -> 8u
 __global__ static void sobel_magnitude_kernel(
     const int16_t* __restrict__ gx,
     const int16_t* __restrict__ gy,
@@ -164,10 +162,6 @@ __global__ static void sobel_magnitude_kernel(
 }
 
 // stage 3 – Sobel edge detection
-// Runs two NPP 3×3 Sobel passes (horizontal + vertical gradient) with
-// replicated-border handling, then combines into gradient magnitude via
-// sobel_magnitude_kernel.  Output is an 8-bit magnitude image ready for
-// contour tracing in Stage 2.
 GrayImage npp_sobel_edges(const GrayImage& src)
 {
     const int    w       = src.width,  h = src.height;
@@ -194,7 +188,7 @@ GrayImage npp_sobel_edges(const GrayImage& src)
     NppiPoint        offset  = { 0, 0 };
     NppStreamContext nppCtx  = make_npp_ctx();
 
-    // horizontal Sobel (Gy – sensitive to horizontal edges)
+    // horizontal gradient
     chk_npp(
         nppiFilterSobelHorizBorder_8u16s_C1R_Ctx(
             d_src, step8, srcSize, offset,
@@ -204,7 +198,7 @@ GrayImage npp_sobel_edges(const GrayImage& src)
         "nppiFilterSobelHorizBorder"
     );
 
-    // vertical Sobel (Gx – sensitive to vertical edges)
+    // vertical gradient
     chk_npp(
         nppiFilterSobelVertBorder_8u16s_C1R_Ctx(
             d_src, step8, srcSize, offset,
@@ -214,7 +208,6 @@ GrayImage npp_sobel_edges(const GrayImage& src)
         "nppiFilterSobelVertBorder"
     );
 
-    // combine into gradient magnitude
     int n       = w * h;
     int threads = 256;
     int blocks  = (n + threads - 1) / threads;

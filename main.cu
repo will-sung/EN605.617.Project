@@ -1,6 +1,6 @@
 // main.cu – image pre-processing pipeline
-// stages: load -> grayscale (NPP) -> blur (NPP) -> Sobel edge detect (NPP)
-// usage: ./pipeline <image.ppm> [blur_radius]
+// stages: load -> grayscale (NPP) -> blur (NPP) -> Sobel (NPP) -> threshold (CUDA)
+// usage: ./pipeline <image.ppm> [blur_radius] [edge_thresh]
 
 #include "pipeline.h"
 #include <iostream>
@@ -29,12 +29,15 @@ int main(int argc, char* argv[])
 
     const std::string input_path = argv[1];
     int blur_radius = (argc >= 3) ? std::atoi(argv[2]) : BLUR_RADIUS;
+    int edge_thresh = (argc >= 4) ? std::atoi(argv[3]) : EDGE_THRESH;
 
-    blur_radius = std::max(1, std::min(blur_radius, 5));
+    blur_radius = std::max(1,   std::min(blur_radius, 5));
+    edge_thresh = std::max(1,   std::min(edge_thresh, 254));
 
     std::cout << "=== Shape Pre-Processing Pipeline ===\n";
     std::cout << "Input       : " << input_path << "\n";
     std::cout << "Blur radius : " << blur_radius << "\n";
+    std::cout << "Edge thresh : " << edge_thresh << "\n";
     print_device_info();
 
     try {
@@ -56,12 +59,16 @@ int main(int argc, char* argv[])
         GrayImage edges = npp_sobel_edges(blurred);
         delete[] blurred.data;
         save_pgm("out_3_edges.pgm", edges);
+
+        // stage 4: threshold gradient magnitude -> binary edge map
+        GrayImage binary = threshold_edges(edges, edge_thresh);
         delete[] edges.data;
+        save_pgm("out_4_binary.pgm", binary);
+        delete[] binary.data;
 
         std::cout << "\n=== Pipeline complete ===\n";
-        std::cout << "Outputs: out_1_gray.pgm  "
-                  << "out_2_blurred.pgm  "
-                  << "out_3_edges.pgm\n";
+        std::cout << "Outputs: out_1_gray.pgm  out_2_blurred.pgm  "
+                  << "out_3_edges.pgm  out_4_binary.pgm\n";
 
     } catch (const std::exception& ex) {
         std::cerr << "[ERROR] " << ex.what() << "\n";

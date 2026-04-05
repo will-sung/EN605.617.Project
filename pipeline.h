@@ -6,6 +6,7 @@
 
 static constexpr int MAX_DIM     = 4096;
 static constexpr int BLUR_RADIUS = 3;    // default -> 7x7 kernel
+static constexpr int EDGE_THRESH = 40;   // default Sobel magnitude threshold
 
 struct GrayImage {
     int      width  = 0;
@@ -25,3 +26,6 @@ GrayImage npp_gaussian_blur(const GrayImage& src, int radius);
 
 // stage 3 (NPP + CUDA): Sobel edge detection -> gradient magnitude image
 GrayImage npp_sobel_edges(const GrayImage& src);
+
+// stage 4 (CUDA): threshold gradient magnitude -> binary edge map (0 or 255)
+GrayImage threshold_edges(const GrayImage& src, int thresh_val);
