@@ -1,5 +1,4 @@
-// main.cu – image processing pipeline
-// stages: grayscale -> blur -> Sobel -> threshold -> CCL -> contour tracing
+// main.cu – shape recognition pipeline
 // usage: ./pipeline <image.ppm> [blur_radius] [edge_thresh]
 
 #include "pipeline.h"
@@ -67,12 +66,12 @@ int main(int argc, char* argv[])
         delete[] rgba;
         save_pgm("out_1_gray.pgm", gray);
 
-        // stage 2: gaussian blur – reduces noise before edge detection
+        // stage 2: gaussian blur
         GrayImage blurred = npp_gaussian_blur(gray, blur_radius);
         delete[] gray.data;
         save_pgm("out_2_blurred.pgm", blurred);
 
-        // stage 3: Sobel edge detection on the blurred output
+        // stage 3: Sobel edge detection
         GrayImage edges = npp_sobel_edges(blurred);
         delete[] blurred.data;
         save_pgm("out_3_edges.pgm", edges);
@@ -103,6 +102,14 @@ int main(int argc, char* argv[])
                 contour_img.data[pt.second * width + pt.first] = 255;
         save_pgm("out_6_contours.pgm", contour_img);
         delete[] contour_img.data;
+
+        // step 7: Fourier Descriptors + classification
+        std::cout << "\n--- Shape Classification ---\n";
+        std::vector<ShapeResult> shapes = classify_shapes(contours);
+
+        std::cout << "\n=== Results ===\n";
+        for (const auto& s : shapes)
+            std::cout << "  Shape " << s.label << ": " << s.shape << "\n";
 
         std::cout << "\n=== Pipeline complete ===\n";
         std::cout << "Outputs: out_1_gray.pgm  out_2_blurred.pgm  out_3_edges.pgm"

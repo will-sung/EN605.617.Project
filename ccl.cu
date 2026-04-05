@@ -21,7 +21,6 @@ static void chk_cuda(cudaError_t e, const char* loc)
 
 static constexpr uint32_t BG = 0xFFFFFFFFu;  // background sentinel
 
-// foreground pixels get label = linear index; background gets BG
 __global__ static void ccl_init_kernel(
     const uint8_t* __restrict__ binary,
     uint32_t*      __restrict__ labels,
@@ -32,8 +31,6 @@ __global__ static void ccl_init_kernel(
     labels[i] = (binary[i] > 0) ? (uint32_t)i : BG;
 }
 
-// one propagation pass: each foreground pixel takes the minimum label
-// of itself and its 8-connected foreground neighbors
 __global__ static void ccl_propagate_kernel(
     const uint32_t* __restrict__ src,
     uint32_t*       __restrict__ dst,

@@ -54,3 +54,15 @@ struct Contour {
 
 // stage 6 (CPU): trace the boundary of every component in a CCLResult
 std::vector<Contour> trace_contours(const CCLResult& ccl);
+
+// classification result for one contour
+struct ShapeResult {
+    int         label;
+    int         contour_len;
+    const char* shape;   // "circle", "rectangle", "triangle", "unknown"
+    float       d2;      // normalized |Z[2]| (triangle indicator)
+    float       d3;      // normalized |Z[3]| (rectangle indicator)
+};
+
+// stage 7 (cuFFT): compute Fourier Descriptors and classify each contour
+std::vector<ShapeResult> classify_shapes(const std::vector<Contour>& contours);

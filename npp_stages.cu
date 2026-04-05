@@ -115,7 +115,6 @@ GrayImage npp_gaussian_blur(const GrayImage& src, int radius)
         default: mask = NPP_MASK_SIZE_7_X_7; break;
     }
 
-    // seed d_dst so border pixels (outside ROI) keep original values
     chk_cuda(cudaMemcpy(d_dst, d_src,
                         bytes, cudaMemcpyDeviceToDevice), "blur D2D seed");
 
