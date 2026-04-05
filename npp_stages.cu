@@ -1,6 +1,7 @@
 // npp_stages.cu – NPP image processing stages
 // stage 1: RGBA -> grayscale (nppiRGBToGray)
 // stage 2: gaussian blur    (nppiFilterGauss)
+// stage 3: Sobel edge detection (nppiFilterSobelHorizBorder / VertBorder + magnitude kernel)
 
 #include "pipeline.h"
 
@@ -144,5 +145,95 @@ GrayImage npp_gaussian_blur(const GrayImage& src, int radius)
 
     std::cout << "[NPP] Blur  " << w << "x" << h
               << "  radius=" << radius << "\n";
+    return out;
+}
+
+// --- stage 3 helpers ---------------------------------------------------
+
+// Compute gradient magnitude: clamp(sqrt(Gx^2 + Gy^2), 0, 255) -> 8u
+__global__ static void sobel_magnitude_kernel(
+    const int16_t* __restrict__ gx,
+    const int16_t* __restrict__ gy,
+    uint8_t*       __restrict__ out,
+    int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float mag = sqrtf((float)gx[i]*gx[i] + (float)gy[i]*gy[i]);
+    out[i] = static_cast<uint8_t>(fminf(mag, 255.0f));
+}
+
+// stage 3 – Sobel edge detection
+// Runs two NPP 3×3 Sobel passes (horizontal + vertical gradient) with
+// replicated-border handling, then combines into gradient magnitude via
+// sobel_magnitude_kernel.  Output is an 8-bit magnitude image ready for
+// contour tracing in Stage 2.
+GrayImage npp_sobel_edges(const GrayImage& src)
+{
+    const int    w       = src.width,  h = src.height;
+    const size_t bytes8  = static_cast<size_t>(w) * h;
+    const size_t bytes16 = bytes8 * sizeof(int16_t);
+    const int    step8   = w;
+    const int    step16  = w * static_cast<int>(sizeof(int16_t));
+
+    Npp8u*  d_src = nullptr;
+    Npp16s* d_gx  = nullptr;
+    Npp16s* d_gy  = nullptr;
+    Npp8u*  d_out = nullptr;
+
+    chk_cuda(cudaMalloc(&d_src, bytes8),   "sobel malloc src");
+    chk_cuda(cudaMalloc(&d_gx,  bytes16),  "sobel malloc gx");
+    chk_cuda(cudaMalloc(&d_gy,  bytes16),  "sobel malloc gy");
+    chk_cuda(cudaMalloc(&d_out, bytes8),   "sobel malloc out");
+
+    chk_cuda(cudaMemcpy(d_src, src.data, bytes8,
+                        cudaMemcpyHostToDevice), "sobel H2D");
+
+    NppiSize         srcSize = { w, h };
+    NppiSize         roi     = { w, h };
+    NppiPoint        offset  = { 0, 0 };
+    NppStreamContext nppCtx  = make_npp_ctx();
+
+    // horizontal Sobel (Gy – sensitive to horizontal edges)
+    chk_npp(
+        nppiFilterSobelHorizBorder_8u16s_C1R_Ctx(
+            d_src, step8, srcSize, offset,
+            d_gx,  step16, roi,
+            NPP_MASK_SIZE_3_X_3, NPP_BORDER_REPLICATE, nppCtx
+        ),
+        "nppiFilterSobelHorizBorder"
+    );
+
+    // vertical Sobel (Gx – sensitive to vertical edges)
+    chk_npp(
+        nppiFilterSobelVertBorder_8u16s_C1R_Ctx(
+            d_src, step8, srcSize, offset,
+            d_gy,  step16, roi,
+            NPP_MASK_SIZE_3_X_3, NPP_BORDER_REPLICATE, nppCtx
+        ),
+        "nppiFilterSobelVertBorder"
+    );
+
+    // combine into gradient magnitude
+    int n       = w * h;
+    int threads = 256;
+    int blocks  = (n + threads - 1) / threads;
+    sobel_magnitude_kernel<<<blocks, threads>>>(d_gx, d_gy, d_out, n);
+    chk_cuda(cudaGetLastError(),      "sobel_magnitude_kernel launch");
+    chk_cuda(cudaDeviceSynchronize(), "sobel_magnitude_kernel sync");
+
+    GrayImage out;
+    out.width  = w;
+    out.height = h;
+    out.data   = new uint8_t[bytes8];
+    chk_cuda(cudaMemcpy(out.data, d_out, bytes8,
+                        cudaMemcpyDeviceToHost), "sobel D2H");
+
+    cudaFree(d_src);
+    cudaFree(d_gx);
+    cudaFree(d_gy);
+    cudaFree(d_out);
+
+    std::cout << "[NPP] Sobel   " << w << "x" << h << "\n";
     return out;
 }

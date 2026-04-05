@@ -11,8 +11,8 @@ ________________________________________
 # GPU Image Pre-Processing Pipeline
 
 A CUDA-accelerated image preprocessing pipeline for geometric shape classification.
-Uses **NPP** for grayscale conversion and Gaussian blur, and **cuFFT** for
-frequency-domain edge detection.
+Uses **NPP** for all three stages: grayscale conversion, Gaussian blur, and Sobel
+edge detection.
 
 ## Pipeline Stages
 
@@ -20,20 +20,22 @@ frequency-domain edge detection.
 Input image (PPM)
     │
     ▼
-[Stage 1 – NPP]   RGBA → 8-bit Grayscale      → out_1_gray.pgm
+[Stage 1 – NPP]  RGBA → 8-bit Grayscale  → out_1_gray.pgm
     │
     ▼
-[Stage 2 – NPP]   Gaussian Blur               → out_2_blurred.pgm
+[Stage 2 – NPP]  Gaussian Blur           → out_2_blurred.pgm
     │
     ▼
-[Stage 3 – cuFFT] Frequency-domain Edge Detect → out_3_edges.pgm
+[Stage 3 – NPP]  Sobel Edge Detection    → out_3_edges.pgm
 ```
 
-**Stage 3 detail:** the blurred image is forward-transformed (R2C), a high-pass
-filter zeroes all frequency coefficients below `edge_threshold` (fraction of max
-frequency distance from DC), and an inverse transform (C2R) produces the edge
-magnitude image. Low-frequency regions (flat areas) are suppressed; high-frequency
-content (shape boundaries) is preserved.
+**Stage 3 detail:** the blurred image is processed by two NPP 3×3 Sobel passes
+(`nppiFilterSobelHorizBorder` and `nppiFilterSobelVertBorder`, 8u→16s, replicated
+border) producing signed horizontal and vertical gradients Gx and Gy.  A small
+CUDA kernel computes the per-pixel gradient magnitude
+`clamp(sqrt(Gx²+Gy²), 0, 255)` into an 8-bit output image.  Flat regions produce
+near-zero response; shape boundaries produce bright ridges suitable for contour
+tracing in Stage 2.
 
 ## Requirements
 
@@ -42,7 +44,6 @@ content (shape boundaries) is preserved.
 | CUDA Toolkit | 12.6 (tested) |
 | GPU architecture | sm_86 (change `-arch` in Makefile as needed) |
 | NPP libraries | `nppig`, `nppif`, `nppic`, `nppc` |
-| cuFFT | included with CUDA Toolkit |
 | C++ standard | C++17 |
 | Compiler | `g++`, `nvcc` |
 
@@ -56,17 +57,16 @@ make clean    # removes all build artifacts and output PGMs
 ## Run
 
 ```bash
-./pipeline <input.ppm> [blur_radius] [edge_threshold]
+./pipeline <input.ppm> [blur_radius]
 ```
 
 | Parameter | Default | Range | Description |
 |---|---|---|---|
 | `blur_radius` | 3 | 1–5 | Gaussian kernel half-size (3→7×7, 2→5×5, 1→3×3) |
-| `edge_threshold` | 0.15 | 0.01–0.99 | Fraction of max frequency distance below which coefficients are zeroed |
 
 Example:
 ```bash
-./pipeline test_shapes.ppm 3 0.15
+./pipeline test_shapes.ppm 3
 ```
 
 ## Test
@@ -79,8 +79,8 @@ output files.
 make test
 ```
 
-**Pass 1:** `blur=3, threshold=0.15` — default settings
-**Pass 2:** `blur=5, threshold=0.10` — aggressive smoothing and wider edge band
+**Pass 1:** `blur=3` — default settings
+**Pass 2:** `blur=5` — aggressive smoothing
 
 Output files (overwritten by Pass 2):
 
@@ -105,7 +105,7 @@ The `validate` binary checks the three output PGMs for correctness after each
 | Blur stddev | ≤ gray stddev — smoothing reduces variance |
 | Blur mean | Within 20 DN of gray — brightness preserved |
 | Blur max | > 0 — image not wiped |
-| Edge mean | < gray mean — high-pass removed DC component |
+| Edge mean | < gray mean — flat regions near zero in Sobel output |
 | Edge max | > 50 — edges were detected |
 | Edge stddev | > 20 — edge map has contrast between regions |
 
@@ -138,28 +138,9 @@ make benchmark
 parameter configurations at 512×512.
 
 **`benchmark_scaling.png`** — line chart showing CPU and GPU wall-clock time as
-image size grows from 512×512 to 4096×4096 (fixed blur=3, threshold=0.15). The
-GPU carries a constant ~190 ms CUDA context initialization cost per process; GPU
-compute time alone is faster at all sizes, and wall-clock time converges around
-4096×4096.
-
-## File Structure
-
-```
-.
-├── main.cu             # pipeline entry point
-├── npp_stages.cu       # stage 1 (RGBA→gray) and stage 2 (blur) via NPP
-├── cufft_edge.cu       # stage 3 (edge detection) via cuFFT
-├── image_io.cpp        # PPM load, PGM save
-├── pipeline.h          # shared types and declarations
-├── validate.cpp        # output validation
-├── cpu_reference.cpp   # CPU reference pipeline
-├── gen_test_image.cpp  # synthetic test image generator (accepts size arg)
-├── benchmark.py        # CPU vs GPU timing + chart generation
-├── stb_image.h         # minimal P6 PPM loader stub
-├── stb_image_write.h   # minimal PPM writer stub
-└── Makefile
-```
+image size grows from 512×512 to 4096×4096 (fixed blur=3). The GPU carries a
+constant ~190 ms CUDA context initialization cost per process; GPU compute time
+alone is faster at all sizes, and wall-clock time converges around 4096×4096.
 
 ## Makefile Targets
 
@@ -171,3 +152,7 @@ compute time alone is faster at all sizes, and wall-clock time converges around
 | `make cpu_reference` | Build CPU-only reference binary |
 | `make test_cpu` | Run CPU reference pipeline on test image |
 | `make clean` | Remove all binaries, object files, output PGMs, and charts |
+
+
+# Stage 2:
+# GPU-Accelerated Shape Recognition

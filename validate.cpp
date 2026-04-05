@@ -142,7 +142,7 @@ int main(int argc, char* argv[])
 
     std::cout << "\n--- Edge detection (out_3_edges.pgm) ---\n";
     print_stats("edges  ", se);
-    check(se.mean < sg.mean,   "mean < gray (DC removed by high-pass)");
+    check(se.mean < sg.mean,   "mean < gray (flat regions near zero in Sobel output)");
     check(se.maxv > 50,        "max > 50 (edges detected)");
     check(se.stddev > 20.0,    "stddev > 20 (edge/flat contrast)");
 

@@ -6,9 +6,9 @@ NVCC_FLAGS := -std=c++17 -O2 -lineinfo -arch=sm_86
 CXX_FLAGS  := -std=c++17 -O2
 
 LDFLAGS := -L$(CUDA_PATH)/lib64 \
-           -lcufft -lnppig -lnppif -lnppicc -lnppc -lcudart
+           -lnppig -lnppif -lnppicc -lnppc -lcudart
 
-CU_SRCS  := main.cu npp_stages.cu cufft_edge.cu
+CU_SRCS  := main.cu npp_stages.cu
 CPP_SRCS := image_io.cpp
 
 OBJ_CU  := $(CU_SRCS:.cu=.o)
@@ -42,11 +42,11 @@ test: all
 	@echo ">>> Generating test image..."
 	./$(GEN_IMG)
 	@echo ""
-	@echo ">>> Pass 1: blur=3 threshold=0.15..."
-	./$(PIPELINE) test_shapes.ppm 3 0.15
+	@echo ">>> Pass 1: blur=3..."
+	./$(PIPELINE) test_shapes.ppm 3
 	@echo ""
-	@echo ">>> Pass 2: blur=5 threshold=0.10..."
-	./$(PIPELINE) test_shapes.ppm 5 0.10
+	@echo ">>> Pass 2: blur=5..."
+	./$(PIPELINE) test_shapes.ppm 5
 	@echo ""
 	@echo ">>> Validating outputs..."
 	./$(VALIDATE) 512 512
