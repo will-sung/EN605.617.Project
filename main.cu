@@ -1,5 +1,5 @@
 // main.cu – image processing pipeline
-// stages: grayscale -> blur -> Sobel -> threshold -> CCL
+// stages: grayscale -> blur -> Sobel -> threshold -> CCL -> contour tracing
 // usage: ./pipeline <image.ppm> [blur_radius] [edge_thresh]
 
 #include "pipeline.h"
@@ -87,13 +87,26 @@ int main(int argc, char* argv[])
         delete[] binary.data;
 
         GrayImage label_vis = make_label_vis(ccl);
-        ccl_free(ccl);
         save_pgm("out_5_labels.pgm", label_vis);
         delete[] label_vis.data;
 
+        // stage 6: contour tracing (CPU)
+        std::vector<Contour> contours = trace_contours(ccl);
+        ccl_free(ccl);
+
+        GrayImage contour_img;
+        contour_img.width  = width;
+        contour_img.height = height;
+        contour_img.data   = new uint8_t[(size_t)width * height]();
+        for (const auto& c : contours)
+            for (const auto& pt : c.points)
+                contour_img.data[pt.second * width + pt.first] = 255;
+        save_pgm("out_6_contours.pgm", contour_img);
+        delete[] contour_img.data;
+
         std::cout << "\n=== Pipeline complete ===\n";
         std::cout << "Outputs: out_1_gray.pgm  out_2_blurred.pgm  out_3_edges.pgm"
-                  << "  out_4_binary.pgm  out_5_labels.pgm\n";
+                  << "  out_4_binary.pgm  out_5_labels.pgm  out_6_contours.pgm\n";
 
     } catch (const std::exception& ex) {
         std::cerr << "[ERROR] " << ex.what() << "\n";

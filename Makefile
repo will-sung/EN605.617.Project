@@ -9,7 +9,7 @@ LDFLAGS := -L$(CUDA_PATH)/lib64 \
            -lnppig -lnppif -lnppicc -lnppc -lcudart
 
 CU_SRCS  := main.cu npp_stages.cu sobel_threshold.cu ccl.cu
-CPP_SRCS := image_io.cpp
+CPP_SRCS := image_io.cpp contour.cpp
 
 OBJ_CU  := $(CU_SRCS:.cu=.o)
 OBJ_CPP := $(CPP_SRCS:.cpp=.o)
@@ -28,7 +28,7 @@ $(PIPELINE): $(OBJ_CU) $(OBJ_CPP)
 %.o: %.cu pipeline.h
 	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
 
-image_io.o: image_io.cpp pipeline.h
+%.o: %.cpp pipeline.h
 	$(CXX) $(CXX_FLAGS) -c $< -o $@
 
 $(GEN_IMG): gen_test_image.cpp

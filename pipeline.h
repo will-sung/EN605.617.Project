@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 static constexpr int MAX_DIM      = 4096;
 static constexpr int BLUR_RADIUS  = 3;    // default -> 7x7 kernel
@@ -43,3 +45,12 @@ struct CCLResult {
 // components smaller than min_area pixels are treated as background
 CCLResult ccl_label(const GrayImage& binary, int min_area = CCL_MIN_AREA);
 void      ccl_free(CCLResult& r);
+
+// ordered boundary of one labeled component
+struct Contour {
+    int                              label = 0;
+    std::vector<std::pair<int,int>>  points;   // (x, y) in trace order
+};
+
+// stage 6 (CPU): trace the boundary of every component in a CCLResult
+std::vector<Contour> trace_contours(const CCLResult& ccl);

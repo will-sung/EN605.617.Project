@@ -10,31 +10,37 @@ The goal of this project is to build a GPU-accelerated pipeline that classifies 
 
 ---
 
-# Stage 1 – GPU Image Pre-Processing Pipeline
-
-Implements color conversion, noise reduction, edge detection, and binarization. Stages 1–3 use NPP; Stage 4 is a custom CUDA kernel.
-
 ## Pipeline
 
 ```
 Input image (PPM)
     │
     ▼
-[Stage 1 – NPP]   RGBA → 8-bit Grayscale       → out_1_gray.pgm
+[Step 1 – NPP]   RGBA → 8-bit Grayscale            → out_1_gray.pgm
     │
     ▼
-[Stage 2 – NPP]   Gaussian Blur                → out_2_blurred.pgm
+[Step 2 – NPP]   Gaussian Blur                     → out_2_blurred.pgm
     │
     ▼
-[Stage 3 – NPP]   Sobel Edge Detection         → out_3_edges.pgm
+[Step 3 – NPP]   Sobel Edge Detection              → out_3_edges.pgm
     │
     ▼
-[Stage 4 – CUDA]  Threshold → Binary Edge Map  → out_4_binary.pgm
+[Step 4 – CUDA]  Threshold → Binary Edge Map       → out_4_binary.pgm
+    │
+    ▼
+[Step 5 – CUDA]  Connected Component Labeling      → out_5_labels.pgm
+    │
+    ▼
+[Step 6 – CPU]   Contour Tracing                   → out_6_contours.pgm
 ```
 
-**Stage 3:** runs `nppiFilterSobelHorizBorder` and `nppiFilterSobelVertBorder` (3×3, 8u→16s, replicated border) to get Gx and Gy, then a CUDA kernel computes `clamp(sqrt(Gx²+Gy²), 0, 255)`.
+**Step 3:** runs `nppiFilterSobelHorizBorder` and `nppiFilterSobelVertBorder` (3×3, 8u→16s, replicated border) to get Gx and Gy, then a CUDA kernel computes `clamp(sqrt(Gx²+Gy²), 0, 255)`.
 
-**Stage 4:** CUDA kernel — pixels at or above `edge_thresh` become 255, all others 0.
+**Step 4:** CUDA kernel — pixels at or above `edge_thresh` become 255, all others 0.
+
+**Step 5:** iterative label propagation with ping-pong device buffers. Each foreground pixel is initialized to its linear index. On each pass, every pixel takes the minimum label of its 8-connected foreground neighbors until no label changes. Components smaller than `CCL_MIN_AREA` pixels are discarded. The label visualization maps each component ID to a distinct gray level (`id × 50`, clamped to 255).
+
+**Step 6:** Moore-neighbor boundary tracing on CPU. For each component, starts at the topmost-leftmost pixel and scans the 8-neighborhood clockwise from the backtrack direction until the path returns to the start.
 
 ## Requirements
 
@@ -89,14 +95,15 @@ Output files (overwritten by Pass 2):
 | `out_3_edges.pgm` | Sobel gradient magnitude |
 | `out_4_binary.pgm` | Binary edge map (0 or 255) |
 | `out_5_labels.pgm` | Connected component label visualization |
+| `out_6_contours.pgm` | Traced boundary pixels (white on black) |
 
 ## Validation
 
-The `validate` binary checks all five output PGMs after each `make test` run (18 checks total).
+The `validate` binary checks all six output PGMs after each `make test` run (22 checks total).
 
 | Check | Expectation |
 |---|---|
-| Dimensions | All five outputs match input (512×512) |
+| Dimensions | All six outputs match input (512×512) |
 | Gray mean | In range [10, 245] |
 | Gray stddev | > 5 |
 | Gray max | > 100 |
@@ -114,6 +121,10 @@ The `validate` binary checks all five output PGMs after each `make test` run (18
 | Labels max | > 0 |
 | Labels nonzero | > 0.5% |
 | Labels nonzero | < 15% |
+| Contours min | == 0 |
+| Contours max | == 255 |
+| Contours nonzero | > 0.5% |
+| Contours nonzero | < 15% |
 
 ```bash
 ./validate [width height]   # default: 512 512
@@ -126,8 +137,10 @@ Exit code 0 = all pass, 1 = one or more failures.
 | File | Description |
 |---|---|
 | `main.cu` | Pipeline entry point |
-| `npp_stages.cu` | Stages 1–3: grayscale, blur, Sobel via NPP |
-| `sobel_threshold.cu` | Stage 4: binary threshold kernel |
+| `npp_stages.cu` | Steps 1–3: grayscale, blur, Sobel via NPP |
+| `sobel_threshold.cu` | Step 4: binary threshold kernel |
+| `ccl.cu` | Step 5: connected component labeling |
+| `contour.cpp` | Step 6: Moore-neighbor boundary tracing |
 | `image_io.cpp` | PPM load, PGM save |
 | `pipeline.h` | Shared types and declarations |
 | `validate.cpp` | Output validation |
@@ -167,25 +180,3 @@ make benchmark
 | `make cpu_reference` | Build CPU-only reference binary |
 | `make test_cpu` | Run CPU reference pipeline on test image |
 | `make clean` | Remove all binaries, object files, output PGMs, and charts |
-
-
-# Stage 2 – GPU-Accelerated Shape Recognition
-
-## Connected Component Labeling
-
-Labels connected groups of edge pixels in the binary image so each shape boundary becomes a separately identified component. Small components (noise) are discarded.
-
-```
-[Stage 4 – CUDA]  Binary Edge Map  → out_4_binary.pgm
-    │
-    ▼
-[Stage 5 – CUDA]  Connected Component Labeling  → out_5_labels.pgm
-```
-
-**Implementation:** iterative label propagation with ping-pong device buffers. Each foreground pixel is initialized to its linear index. On each pass, every pixel takes the minimum label of its 8-connected foreground neighbors. Passes repeat until no label changes. After convergence the label map is downloaded, components are assigned sequential IDs on the CPU, and any component smaller than `CCL_MIN_AREA` pixels is discarded as noise.
-
-The label visualization (`out_5_labels.pgm`) maps each component ID to a distinct gray level (`id × 50`, clamped to 255) for visual inspection.
-
-| Constant | Default | Description |
-|---|---|---|
-| `CCL_MIN_AREA` | 50 | Minimum component size in pixels |
