@@ -85,17 +85,17 @@ int main()
 
     buf = make_canvas();
     draw_circle(buf, 256, 256, 130, 60, 120, 200);
-    save(buf, "test_circle.ppm");
+    save(buf, "test_circle.png");
     delete[] buf;
 
     buf = make_canvas();
     draw_rect(buf, 131, 181, 381, 331, 200, 80, 80);
-    save(buf, "test_rect.ppm");
+    save(buf, "test_rect.png");
     delete[] buf;
 
     buf = make_canvas();
     draw_triangle(buf, 256, 110, 96, 400, 416, 400, 80, 180, 80);
-    save(buf, "test_triangle.ppm");
+    save(buf, "test_triangle.png");
     delete[] buf;
 
     // --- pairs ---
@@ -103,19 +103,19 @@ int main()
     buf = make_canvas();
     draw_circle(buf,  128, 256, 90,  60, 120, 200);
     draw_rect(buf,   290, 185, 470, 325, 200, 80,  80);
-    save(buf, "test_circle_rect.ppm");
+    save(buf, "test_circle_rect.png");
     delete[] buf;
 
     buf = make_canvas();
     draw_circle(buf,  128, 256, 90,  60, 120, 200);
     draw_triangle(buf, 384, 120, 270, 400, 498, 400, 80, 180, 80);
-    save(buf, "test_circle_tri.ppm");
+    save(buf, "test_circle_tri.png");
     delete[] buf;
 
     buf = make_canvas();
     draw_rect(buf,    30, 185, 220, 325, 200, 80,  80);
     draw_triangle(buf, 384, 120, 270, 400, 498, 400, 80, 180, 80);
-    save(buf, "test_rect_tri.ppm");
+    save(buf, "test_rect_tri.png");
     delete[] buf;
 
     // --- all three ---
@@ -124,7 +124,7 @@ int main()
     draw_circle(buf,   128, 128, 80,  60, 120, 200);
     draw_rect(buf,     310,  60, 450, 200, 200, 80,  80);
     draw_triangle(buf, 256, 310, 140, 470, 370, 470, 80, 180, 80);
-    save(buf, "test_all.ppm");
+    save(buf, "test_all.png");
     delete[] buf;
 
     return 0;

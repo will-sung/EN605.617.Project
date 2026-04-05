@@ -124,8 +124,10 @@ make clean  # removes all build artifacts and output PGMs
 ## Run
 
 ```bash
-./pipeline <input.ppm> [blur_radius] [edge_thresh]
+./pipeline <input> [blur_radius] [edge_thresh]
 ```
+
+Accepts any format supported by stb_image: **PNG, JPG, BMP, TGA, GIF, PPM/PGM**.
 
 | Parameter | Default | Range | Description |
 |---|---|---|---|
@@ -134,12 +136,12 @@ make clean  # removes all build artifacts and output PGMs
 
 Example:
 ```bash
-./pipeline test_shapes.ppm 3 40
+./pipeline test_all.png 3 40
 ```
 
 ## Test
 
-Generates all 7 test images, runs the pipeline twice on `test_all.ppm` (circle + rectangle + triangle), then validates all outputs.
+Generates all 7 test images, runs the pipeline twice on `test_all.png` (circle + rectangle + triangle), then validates all outputs.
 
 ```bash
 make test

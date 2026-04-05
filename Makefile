@@ -43,14 +43,14 @@ $(VALIDATE): validate.cpp
 test: all test_images
 	@echo ""
 	@echo ">>> Pass 1: blur=3 thresh=40..."
-	./$(PIPELINE) test_all.ppm 3 40
+	./$(PIPELINE) test_all.png 3 40
 	@echo ""
 	@echo ">>> Pass 2: blur=5 thresh=35..."
-	./$(PIPELINE) test_all.ppm 5 35
+	./$(PIPELINE) test_all.png 5 35
 	@echo ""
 	@echo ">>> Validating outputs..."
 	./$(VALIDATE) 512 512
-	@ls -lh out_*.pgm test_all.ppm
+	@ls -lh out_*.pgm test_all.png
 
 benchmark: all cpu_reference
 	python3 benchmark.py
@@ -60,15 +60,15 @@ cpu_reference: cpu_reference.cpp stb_image.h
 
 test_cpu: cpu_reference test_images
 	@echo ""
-	./cpu_reference test_all.ppm 3
+	./cpu_reference test_all.png 3
 	@echo ""
-	./cpu_reference test_all.ppm 5
+	./cpu_reference test_all.png 5
 	@mv cpu_1_gray.pgm    cpu_pass2_1_gray.pgm    2>/dev/null || true
 	@mv cpu_2_blurred.pgm cpu_pass2_2_blurred.pgm 2>/dev/null || true
 	@mv cpu_3_edges.pgm   cpu_pass2_3_edges.pgm   2>/dev/null || true
-	@ls -lh *.pgm test_all.ppm
+	@ls -lh *.pgm test_all.png
 
 clean:
 	rm -f $(OBJ_CU) $(OBJ_CPP) $(PIPELINE) $(GEN_IMGS) $(VALIDATE) \
-	      cpu_reference out_*.pgm test_*.ppm *.o \
+	      cpu_reference out_*.pgm test_*.png *.o \
 	      benchmark_configs.png benchmark_scaling.png cpu_pass2_*.pgm
