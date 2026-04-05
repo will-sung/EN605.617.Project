@@ -12,7 +12,7 @@ The goal of this project is to build a GPU-accelerated pipeline that classifies 
 
 # Stage 1 – GPU Image Pre-Processing Pipeline
 
-Implements the first four steps of the pipeline: color conversion, noise reduction, edge detection, and binarization. Stages 1–3 use NPP; Stage 4 is a custom CUDA kernel.
+Implements color conversion, noise reduction, edge detection, and binarization. Stages 1–3 use NPP; Stage 4 is a custom CUDA kernel.
 
 ## Pipeline
 
@@ -88,14 +88,15 @@ Output files (overwritten by Pass 2):
 | `out_2_blurred.pgm` | Gaussian-blurred result |
 | `out_3_edges.pgm` | Sobel gradient magnitude |
 | `out_4_binary.pgm` | Binary edge map (0 or 255) |
+| `out_5_labels.pgm` | Connected component label visualization |
 
 ## Validation
 
-The `validate` binary checks all four output PGMs after each `make test` run (14 checks total).
+The `validate` binary checks all five output PGMs after each `make test` run (18 checks total).
 
 | Check | Expectation |
 |---|---|
-| Dimensions | All four outputs match input (512×512) |
+| Dimensions | All five outputs match input (512×512) |
 | Gray mean | In range [10, 245] |
 | Gray stddev | > 5 |
 | Gray max | > 100 |
@@ -109,6 +110,10 @@ The `validate` binary checks all four output PGMs after each `make test` run (14
 | Binary max | == 255 |
 | Binary min | == 0 |
 | Binary nonzero | Between 0.5% and 15% |
+| Labels min | == 0 |
+| Labels max | > 0 |
+| Labels nonzero | > 0.5% |
+| Labels nonzero | < 15% |
 
 ```bash
 ./validate [width height]   # default: 512 512
@@ -165,3 +170,22 @@ make benchmark
 
 
 # Stage 2 – GPU-Accelerated Shape Recognition
+
+## Connected Component Labeling
+
+Labels connected groups of edge pixels in the binary image so each shape boundary becomes a separately identified component. Small components (noise) are discarded.
+
+```
+[Stage 4 – CUDA]  Binary Edge Map  → out_4_binary.pgm
+    │
+    ▼
+[Stage 5 – CUDA]  Connected Component Labeling  → out_5_labels.pgm
+```
+
+**Implementation:** iterative label propagation with ping-pong device buffers. Each foreground pixel is initialized to its linear index. On each pass, every pixel takes the minimum label of its 8-connected foreground neighbors. Passes repeat until no label changes. After convergence the label map is downloaded, components are assigned sequential IDs on the CPU, and any component smaller than `CCL_MIN_AREA` pixels is discarded as noise.
+
+The label visualization (`out_5_labels.pgm`) maps each component ID to a distinct gray level (`id × 50`, clamped to 255) for visual inspection.
+
+| Constant | Default | Description |
+|---|---|---|
+| `CCL_MIN_AREA` | 50 | Minimum component size in pixels |

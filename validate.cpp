@@ -104,7 +104,7 @@ int main(int argc, char* argv[])
     std::cout << "=== Pipeline Output Validation ===\n";
     std::cout << "Expected: " << exp_w << "x" << exp_h << "\n\n";
 
-    PGM gray, blurred, edges, binary;
+    PGM gray, blurred, edges, binary, labels;
     bool ok = true;
 
     std::cout << "--- Loading files ---\n";
@@ -112,6 +112,7 @@ int main(int argc, char* argv[])
     ok &= load_pgm("out_2_blurred.pgm", blurred);
     ok &= load_pgm("out_3_edges.pgm",   edges);
     ok &= load_pgm("out_4_binary.pgm",  binary);
+    ok &= load_pgm("out_5_labels.pgm",  labels);
 
     if (!ok) {
         std::cerr << "[ABORT] Failed to load output files.\n";
@@ -124,11 +125,13 @@ int main(int argc, char* argv[])
     check(blurred.width == exp_w && blurred.height == exp_h, "blurred " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
     check(edges.width   == exp_w && edges.height   == exp_h, "edges   " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
     check(binary.width  == exp_w && binary.height  == exp_h, "binary  " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
+    check(labels.width  == exp_w && labels.height  == exp_h, "labels  " + std::to_string(exp_w) + "x" + std::to_string(exp_h));
 
     const Stats sg = compute_stats(gray);
     const Stats sb = compute_stats(blurred);
     const Stats se = compute_stats(edges);
     const Stats sn = compute_stats(binary);
+    const Stats sl = compute_stats(labels);
 
     std::cout << "\n--- Grayscale (out_1_gray.pgm) ---\n";
     print_stats("gray   ", sg);
@@ -155,6 +158,13 @@ int main(int argc, char* argv[])
     check(sn.minv == 0,                            "min == 0 (has background pixels)");
     check(sn.nonzero_frac >  0.005,                "nonzero > 0.5% (edges present)");
     check(sn.nonzero_frac <  0.15,                 "nonzero < 15% (not noise-flooded)");
+
+    std::cout << "\n--- Label map (out_5_labels.pgm) ---\n";
+    print_stats("labels ", sl);
+    check(sl.minv == 0,               "min == 0 (background present)");
+    check(sl.maxv > 0,                "max > 0 (at least one component)");
+    check(sl.nonzero_frac >  0.005,   "nonzero > 0.5% (components found)");
+    check(sl.nonzero_frac <  0.15,    "nonzero < 15% (not noise-flooded)");
 
     std::cout << "\n=== " << g_pass << " passed, " << g_fail << " failed ===\n";
     return (g_fail > 0) ? 1 : 0;

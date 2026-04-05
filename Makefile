@@ -8,7 +8,7 @@ CXX_FLAGS  := -std=c++17 -O2
 LDFLAGS := -L$(CUDA_PATH)/lib64 \
            -lnppig -lnppif -lnppicc -lnppc -lcudart
 
-CU_SRCS  := main.cu npp_stages.cu sobel_threshold.cu
+CU_SRCS  := main.cu npp_stages.cu sobel_threshold.cu ccl.cu
 CPP_SRCS := image_io.cpp
 
 OBJ_CU  := $(CU_SRCS:.cu=.o)

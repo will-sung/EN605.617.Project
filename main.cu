@@ -1,12 +1,29 @@
-// main.cu – image pre-processing pipeline
-// stages: load -> grayscale (NPP) -> blur (NPP) -> Sobel (NPP) -> threshold (CUDA)
+// main.cu – image processing pipeline
+// stages: grayscale -> blur -> Sobel -> threshold -> CCL
 // usage: ./pipeline <image.ppm> [blur_radius] [edge_thresh]
 
 #include "pipeline.h"
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
+#include <algorithm>
 #include <cuda_runtime.h>
+
+// map component labels to gray values for visualization
+static GrayImage make_label_vis(const CCLResult& ccl)
+{
+    GrayImage vis;
+    vis.width  = ccl.width;
+    vis.height = ccl.height;
+    size_t n   = (size_t)ccl.width * ccl.height;
+    vis.data   = new uint8_t[n];
+    for (size_t i = 0; i < n; i++) {
+        uint32_t lbl = ccl.labels[i];
+        vis.data[i]  = (lbl == 0) ? 0
+                     : static_cast<uint8_t>(std::min(lbl * 50u, 255u));
+    }
+    return vis;
+}
 
 static void print_device_info() {
     int dev = 0;
@@ -64,11 +81,19 @@ int main(int argc, char* argv[])
         GrayImage binary = threshold_edges(edges, edge_thresh);
         delete[] edges.data;
         save_pgm("out_4_binary.pgm", binary);
+
+        // stage 5: connected component labeling
+        CCLResult ccl = ccl_label(binary, CCL_MIN_AREA);
         delete[] binary.data;
 
+        GrayImage label_vis = make_label_vis(ccl);
+        ccl_free(ccl);
+        save_pgm("out_5_labels.pgm", label_vis);
+        delete[] label_vis.data;
+
         std::cout << "\n=== Pipeline complete ===\n";
-        std::cout << "Outputs: out_1_gray.pgm  out_2_blurred.pgm  "
-                  << "out_3_edges.pgm  out_4_binary.pgm\n";
+        std::cout << "Outputs: out_1_gray.pgm  out_2_blurred.pgm  out_3_edges.pgm"
+                  << "  out_4_binary.pgm  out_5_labels.pgm\n";
 
     } catch (const std::exception& ex) {
         std::cerr << "[ERROR] " << ex.what() << "\n";
