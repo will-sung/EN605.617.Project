@@ -124,7 +124,7 @@ make clean  # removes all build artifacts and output PGMs
 ## Run
 
 ```bash
-./pipeline <input> [blur_radius] [edge_thresh]
+./pipeline_app <input> [blur_radius] [edge_thresh]
 ```
 
 Accepts any format supported by stb_image: **PNG, JPG, BMP, TGA, GIF, PPM/PGM**.
@@ -136,7 +136,7 @@ Accepts any format supported by stb_image: **PNG, JPG, BMP, TGA, GIF, PPM/PGM**.
 
 Example:
 ```bash
-./pipeline test_all.png 3 40
+./pipeline_app tests/images/test_all.png 3 40
 ```
 
 ## Test
@@ -198,20 +198,28 @@ Exit code 0 = all pass, 1 = one or more failures.
 
 ## File Structure
 
-| File | Description |
-|---|---|
-| `main.cu` | Pipeline entry point |
-| `npp_stages.cu` | Steps 1–3: grayscale, blur, Sobel via NPP |
-| `sobel_threshold.cu` | Step 4: binary threshold kernel |
-| `ccl.cu` | Step 5: connected component labeling |
-| `contour.cpp` | Step 6: Moore-neighbor boundary tracing |
-| `fourier_desc.cu` | Step 7: cuFFT Fourier Descriptors + classifier |
-| `image_io.cpp` | PPM load, PGM save |
-| `pipeline.h` | Shared types and declarations |
-| `validate.cpp` | Output validation |
-| `cpu_reference.cpp` | CPU reference pipeline |
-| `gen_test_images.cpp` | Generates 7 test PPMs (each shape alone, pairs, all three) |
-| `benchmark.py` | CPU vs GPU timing and chart generation |
+```
+pipeline/               source for the GPU pipeline application
+  main.cu               entry point
+  npp_stages.cu         Steps 1–3: grayscale, blur, Sobel via NPP
+  sobel_threshold.cu    Step 4: binary threshold kernel
+  ccl.cu                Step 5: connected component labeling
+  contour.cpp           Step 6: Moore-neighbor boundary tracing
+  fourier_desc.cu       Step 7: cuFFT Fourier Descriptors + classifier
+  image_io.cpp          image load (stb_image) and PGM save
+  pipeline.h            shared types and declarations
+  stb_image.h           stb_image v2.30 (JPEG/PNG/BMP/TGA/GIF/PNM)
+
+tests/                  test and verification tools
+  validate.cpp          checks all six output PGMs
+  gen_test_images.cpp   generates 7 test PNGs
+  cpu_reference.cpp     CPU-only reference pipeline for timing comparison
+  benchmark.py          CPU vs GPU timing charts
+  stb_image_write.h     stb_image_write v1.16
+  images/               generated test PNGs (created by make test_images)
+```
+
+Binaries are built into the project root: `pipeline_app`, `gen_test_images`, `validate`, `cpu_reference`.
 
 ## CPU Reference
 
@@ -239,7 +247,7 @@ make benchmark
 
 | Target | Description |
 |---|---|
-| `make` / `make all` | Build `pipeline`, `gen_test_images`, `validate` |
+| `make` / `make all` | Build `pipeline_app`, `gen_test_images`, `validate` |
 | `make test` | Generate test image, run both passes, validate |
 | `make test_images` | Build `gen_test_images` and generate all 7 individual test PPMs |
 | `make benchmark` | Build all binaries and run timing script |
