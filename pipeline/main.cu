@@ -61,29 +61,33 @@ int main(int argc, char* argv[])
         uint8_t* rgba = load_image(input_path, width, height);
         if (!rgba) return EXIT_FAILURE;
 
-        // stage 1: RGBA -> grayscale
-        GrayImage gray = npp_rgba_to_gray(rgba, width, height);
+        // stage 1: RGBA -> grayscale (result stays on device)
+        DeviceGrayImage d_gray = npp_rgba_to_gray(rgba, width, height);
         delete[] rgba;
-        save_pgm("out_1_gray.pgm", gray);
+        { GrayImage h = device_gray_download(d_gray);
+          save_pgm("out_1_gray.pgm", h); delete[] h.data; }
 
-        // stage 2: gaussian blur
-        GrayImage blurred = npp_gaussian_blur(gray, blur_radius);
-        delete[] gray.data;
-        save_pgm("out_2_blurred.pgm", blurred);
+        // stage 2: gaussian blur (device -> device)
+        DeviceGrayImage d_blurred = npp_gaussian_blur(d_gray, blur_radius);
+        device_gray_free(d_gray);
+        { GrayImage h = device_gray_download(d_blurred);
+          save_pgm("out_2_blurred.pgm", h); delete[] h.data; }
 
-        // stage 3: Sobel edge detection
-        GrayImage edges = npp_sobel_edges(blurred);
-        delete[] blurred.data;
-        save_pgm("out_3_edges.pgm", edges);
+        // stage 3: Sobel edge detection (device -> device)
+        DeviceGrayImage d_edges = npp_sobel_edges(d_blurred);
+        device_gray_free(d_blurred);
+        { GrayImage h = device_gray_download(d_edges);
+          save_pgm("out_3_edges.pgm", h); delete[] h.data; }
 
-        // stage 4: threshold gradient magnitude -> binary edge map
-        GrayImage binary = threshold_edges(edges, edge_thresh);
-        delete[] edges.data;
-        save_pgm("out_4_binary.pgm", binary);
+        // stage 4: threshold gradient magnitude -> binary edge map (device -> device)
+        DeviceGrayImage d_binary = threshold_edges(d_edges, edge_thresh);
+        device_gray_free(d_edges);
+        { GrayImage h = device_gray_download(d_binary);
+          save_pgm("out_4_binary.pgm", h); delete[] h.data; }
 
-        // stage 5: connected component labeling
-        CCLResult ccl = ccl_label(binary, CCL_MIN_AREA);
-        delete[] binary.data;
+        // stage 5: connected component labeling (consumes d_binary on device)
+        CCLResult ccl = ccl_label(d_binary, CCL_MIN_AREA);
+        device_gray_free(d_binary);
 
         GrayImage label_vis = make_label_vis(ccl);
         save_pgm("out_5_labels.pgm", label_vis);

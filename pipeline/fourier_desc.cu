@@ -5,6 +5,7 @@
 #include <cufft.h>
 #include <cuda_runtime.h>
 #include <cmath>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -35,6 +36,23 @@ std::vector<ShapeResult> classify_shapes(const std::vector<Contour>& contours)
 {
     std::vector<ShapeResult> results;
 
+    // pre-allocate device buffers at max contour size and reuse
+    int max_N = 0;
+    for (const auto& c : contours)
+        if ((int)c.points.size() >= 8)
+            max_N = std::max(max_N, (int)c.points.size());
+
+    if (max_N == 0) {
+        for (const auto& c : contours)
+            results.push_back({c.label, (int)c.points.size(), "unknown", 0.f, 0.f});
+        return results;
+    }
+
+    cufftComplex* d_in  = nullptr;
+    cufftComplex* d_out = nullptr;
+    chk_cuda(cudaMalloc(&d_in,  max_N * sizeof(cufftComplex)), "fft malloc in");
+    chk_cuda(cudaMalloc(&d_out, max_N * sizeof(cufftComplex)), "fft malloc out");
+
     for (const auto& contour : contours) {
         const int N = (int)contour.points.size();
 
@@ -49,10 +67,6 @@ std::vector<ShapeResult> classify_shapes(const std::vector<Contour>& contours)
             h_in[n].y = (float)contour.points[n].second;
         }
 
-        cufftComplex* d_in  = nullptr;
-        cufftComplex* d_out = nullptr;
-        chk_cuda(cudaMalloc(&d_in,  N * sizeof(cufftComplex)), "fft malloc in");
-        chk_cuda(cudaMalloc(&d_out, N * sizeof(cufftComplex)), "fft malloc out");
         chk_cuda(cudaMemcpy(d_in, h_in.data(), N * sizeof(cufftComplex),
                             cudaMemcpyHostToDevice), "fft H2D");
 
@@ -64,8 +78,6 @@ std::vector<ShapeResult> classify_shapes(const std::vector<Contour>& contours)
         std::vector<cufftComplex> h_out(N);
         chk_cuda(cudaMemcpy(h_out.data(), d_out, N * sizeof(cufftComplex),
                             cudaMemcpyDeviceToHost), "fft D2H");
-        cudaFree(d_in);
-        cudaFree(d_out);
 
         float m1   = cmag(h_out[1]);
         float norm = (m1 > 1e-6f) ? m1 : 1.0f;
@@ -86,6 +98,9 @@ std::vector<ShapeResult> classify_shapes(const std::vector<Contour>& contours)
                   << "  d3=" << d3
                   << "  -> " << shape << "\n";
     }
+
+    cudaFree(d_in);
+    cudaFree(d_out);
 
     return results;
 }

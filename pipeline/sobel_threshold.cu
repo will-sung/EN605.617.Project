@@ -27,7 +27,7 @@ __global__ static void threshold_kernel(
     dst[i] = (src[i] >= thresh) ? 255u : 0u;
 }
 
-GrayImage threshold_edges(const GrayImage& src, int thresh_val)
+DeviceGrayImage threshold_edges(const DeviceGrayImage& src, int thresh_val)
 {
     const int    w      = src.width, h = src.height;
     const size_t bytes  = static_cast<size_t>(w) * h;
@@ -35,30 +35,16 @@ GrayImage threshold_edges(const GrayImage& src, int thresh_val)
         thresh_val <   0 ?   0 :
         thresh_val > 255 ? 255 : thresh_val);
 
-    uint8_t* d_src = nullptr;
     uint8_t* d_dst = nullptr;
-    chk_cuda(cudaMalloc(&d_src, bytes), "thresh malloc src");
     chk_cuda(cudaMalloc(&d_dst, bytes), "thresh malloc dst");
-    chk_cuda(cudaMemcpy(d_src, src.data, bytes,
-                        cudaMemcpyHostToDevice), "thresh H2D");
 
     const int threads = 256;
     const int blocks  = (w * h + threads - 1) / threads;
-    threshold_kernel<<<blocks, threads>>>(d_src, d_dst, w * h, thresh);
+    threshold_kernel<<<blocks, threads>>>(src.d_data, d_dst, w * h, thresh);
     chk_cuda(cudaGetLastError(),      "threshold_kernel launch");
     chk_cuda(cudaDeviceSynchronize(), "threshold_kernel sync");
 
-    GrayImage out;
-    out.width  = w;
-    out.height = h;
-    out.data   = new uint8_t[bytes];
-    chk_cuda(cudaMemcpy(out.data, d_dst, bytes,
-                        cudaMemcpyDeviceToHost), "thresh D2H");
-
-    cudaFree(d_src);
-    cudaFree(d_dst);
-
     std::cout << "[CUDA] Threshold  " << w << "x" << h
               << "  thresh=" << static_cast<int>(thresh) << "\n";
-    return out;
+    return { w, h, d_dst };
 }

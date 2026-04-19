@@ -60,16 +60,13 @@ __global__ static void ccl_propagate_kernel(
     if (best < cur) *d_changed = 1;
 }
 
-CCLResult ccl_label(const GrayImage& binary, int min_area)
+CCLResult ccl_label(const DeviceGrayImage& binary, int min_area)
 {
     const int    w      = binary.width, h = binary.height;
     const size_t npix   = (size_t)w * h;
     const size_t lbytes = npix * sizeof(uint32_t);
 
-    uint8_t* d_bin = nullptr;
-    chk_cuda(cudaMalloc(&d_bin, npix), "ccl malloc bin");
-    chk_cuda(cudaMemcpy(d_bin, binary.data, npix,
-                        cudaMemcpyHostToDevice), "ccl H2D");
+    uint8_t* d_bin = binary.d_data;
 
     uint32_t* d_lab[2] = {};
     chk_cuda(cudaMalloc(&d_lab[0], lbytes), "ccl malloc lab0");
@@ -84,7 +81,6 @@ CCLResult ccl_label(const GrayImage& binary, int min_area)
     ccl_init_kernel<<<blocks, threads>>>(d_bin, d_lab[0], (int)npix);
     chk_cuda(cudaGetLastError(),      "ccl_init launch");
     chk_cuda(cudaDeviceSynchronize(), "ccl_init sync");
-    cudaFree(d_bin);
 
     // propagate until convergence
     dim3 blk(16, 16);
@@ -92,9 +88,7 @@ CCLResult ccl_label(const GrayImage& binary, int min_area)
     int ping = 0;
 
     for (int it = 0, max_it = w + h; it < max_it; it++) {
-        int zero = 0;
-        chk_cuda(cudaMemcpy(d_changed, &zero, sizeof(int),
-                            cudaMemcpyHostToDevice), "ccl reset");
+        chk_cuda(cudaMemset(d_changed, 0, sizeof(int)), "ccl reset");
 
         ccl_propagate_kernel<<<grd, blk>>>(
             d_lab[ping], d_lab[1 - ping], w, h, d_changed);

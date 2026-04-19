@@ -48,8 +48,26 @@ static NppStreamContext make_npp_ctx() {
     return ctx;
 }
 
+void device_gray_free(DeviceGrayImage& img) {
+    cudaFree(img.d_data);
+    img.d_data = nullptr;
+    img.width  = 0;
+    img.height = 0;
+}
+
+GrayImage device_gray_download(const DeviceGrayImage& img) {
+    const size_t bytes = static_cast<size_t>(img.width) * img.height;
+    GrayImage out;
+    out.width  = img.width;
+    out.height = img.height;
+    out.data   = new uint8_t[bytes];
+    chk_cuda(cudaMemcpy(out.data, img.d_data, bytes,
+                        cudaMemcpyDeviceToHost), "D2H gray");
+    return out;
+}
+
 // stage 1 – RGBA to 8-bit grayscale
-GrayImage npp_rgba_to_gray(
+DeviceGrayImage npp_rgba_to_gray(
     const uint8_t* h_rgba,
     int width,
     int height
@@ -78,34 +96,25 @@ GrayImage npp_rgba_to_gray(
         "nppiRGBToGray"
     );
 
-    GrayImage out;
-    out.width  = width;
-    out.height = height;
-    out.data   = new uint8_t[gray_bytes];
-    chk_cuda(cudaMemcpy(out.data, d_gray,
-                        gray_bytes, cudaMemcpyDeviceToHost), "D2H gray");
-
     cudaFree(d_rgba);
-    cudaFree(d_gray);
 
     std::cout << "[NPP] Grayscale  " << width << "x" << height << "\n";
-    return out;
+    return { width, height, d_gray };
 }
 
 // stage 2 – gaussian blur
-GrayImage npp_gaussian_blur(const GrayImage& src, int radius)
+DeviceGrayImage npp_gaussian_blur(const DeviceGrayImage& src, int radius)
 {
     assert(radius >= 1 && radius <= 5);
     const int w = src.width, h = src.height;
     const size_t bytes = static_cast<size_t>(w) * h;
     const int    step  = w;
 
-    Npp8u* d_src = nullptr;
     Npp8u* d_dst = nullptr;
-    chk_cuda(cudaMalloc(&d_src, bytes), "blur malloc src");
     chk_cuda(cudaMalloc(&d_dst, bytes), "blur malloc dst");
-    chk_cuda(cudaMemcpy(d_src, src.data,
-                        bytes, cudaMemcpyHostToDevice), "blur H2D");
+
+    chk_cuda(cudaMemcpy(d_dst, src.d_data,
+                        bytes, cudaMemcpyDeviceToDevice), "blur D2D seed");
 
     // radius 1->3x3, 2->5x5, 3+->7x7
     NppiMaskSize mask;
@@ -115,9 +124,6 @@ GrayImage npp_gaussian_blur(const GrayImage& src, int radius)
         default: mask = NPP_MASK_SIZE_7_X_7; break;
     }
 
-    chk_cuda(cudaMemcpy(d_dst, d_src,
-                        bytes, cudaMemcpyDeviceToDevice), "blur D2D seed");
-
     int border   = radius;
     int srcOff   = border * step + border;
     NppiSize roi = { w - 2*border, h - 2*border };
@@ -125,29 +131,21 @@ GrayImage npp_gaussian_blur(const GrayImage& src, int radius)
     NppStreamContext nppCtx = make_npp_ctx();
     chk_npp(
         nppiFilterGauss_8u_C1R_Ctx(
-            d_src + srcOff, step,
-            d_dst + srcOff, step,
+            src.d_data + srcOff, step,
+            d_dst      + srcOff, step,
             roi, mask, nppCtx
         ),
         "nppiFilterGauss"
     );
 
-    GrayImage out;
-    out.width  = w;
-    out.height = h;
-    out.data   = new uint8_t[bytes];
-    chk_cuda(cudaMemcpy(out.data, d_dst,
-                        bytes, cudaMemcpyDeviceToHost), "blur D2H");
-
-    cudaFree(d_src);
-    cudaFree(d_dst);
-
     std::cout << "[NPP] Blur  " << w << "x" << h
               << "  radius=" << radius << "\n";
-    return out;
+    return { w, h, d_dst };
 }
 
+// stage 3 – Sobel edge detection
 // clamp(sqrt(Gx^2 + Gy^2), 0, 255) -> 8u
+
 __global__ static void sobel_magnitude_kernel(
     const int16_t* __restrict__ gx,
     const int16_t* __restrict__ gy,
@@ -160,8 +158,7 @@ __global__ static void sobel_magnitude_kernel(
     out[i] = static_cast<uint8_t>(fminf(mag, 255.0f));
 }
 
-// stage 3 – Sobel edge detection
-GrayImage npp_sobel_edges(const GrayImage& src)
+DeviceGrayImage npp_sobel_edges(const DeviceGrayImage& src)
 {
     const int    w       = src.width,  h = src.height;
     const size_t bytes8  = static_cast<size_t>(w) * h;
@@ -169,18 +166,13 @@ GrayImage npp_sobel_edges(const GrayImage& src)
     const int    step8   = w;
     const int    step16  = w * static_cast<int>(sizeof(int16_t));
 
-    Npp8u*  d_src = nullptr;
     Npp16s* d_gx  = nullptr;
     Npp16s* d_gy  = nullptr;
     Npp8u*  d_out = nullptr;
 
-    chk_cuda(cudaMalloc(&d_src, bytes8),   "sobel malloc src");
     chk_cuda(cudaMalloc(&d_gx,  bytes16),  "sobel malloc gx");
     chk_cuda(cudaMalloc(&d_gy,  bytes16),  "sobel malloc gy");
     chk_cuda(cudaMalloc(&d_out, bytes8),   "sobel malloc out");
-
-    chk_cuda(cudaMemcpy(d_src, src.data, bytes8,
-                        cudaMemcpyHostToDevice), "sobel H2D");
 
     NppiSize         srcSize = { w, h };
     NppiSize         roi     = { w, h };
@@ -190,8 +182,8 @@ GrayImage npp_sobel_edges(const GrayImage& src)
     // horizontal gradient
     chk_npp(
         nppiFilterSobelHorizBorder_8u16s_C1R_Ctx(
-            d_src, step8, srcSize, offset,
-            d_gx,  step16, roi,
+            src.d_data, step8, srcSize, offset,
+            d_gx,       step16, roi,
             NPP_MASK_SIZE_3_X_3, NPP_BORDER_REPLICATE, nppCtx
         ),
         "nppiFilterSobelHorizBorder"
@@ -200,8 +192,8 @@ GrayImage npp_sobel_edges(const GrayImage& src)
     // vertical gradient
     chk_npp(
         nppiFilterSobelVertBorder_8u16s_C1R_Ctx(
-            d_src, step8, srcSize, offset,
-            d_gy,  step16, roi,
+            src.d_data, step8, srcSize, offset,
+            d_gy,       step16, roi,
             NPP_MASK_SIZE_3_X_3, NPP_BORDER_REPLICATE, nppCtx
         ),
         "nppiFilterSobelVertBorder"
@@ -214,18 +206,9 @@ GrayImage npp_sobel_edges(const GrayImage& src)
     chk_cuda(cudaGetLastError(),      "sobel_magnitude_kernel launch");
     chk_cuda(cudaDeviceSynchronize(), "sobel_magnitude_kernel sync");
 
-    GrayImage out;
-    out.width  = w;
-    out.height = h;
-    out.data   = new uint8_t[bytes8];
-    chk_cuda(cudaMemcpy(out.data, d_out, bytes8,
-                        cudaMemcpyDeviceToHost), "sobel D2H");
-
-    cudaFree(d_src);
     cudaFree(d_gx);
     cudaFree(d_gy);
-    cudaFree(d_out);
 
     std::cout << "[NPP] Sobel   " << w << "x" << h << "\n";
-    return out;
+    return { w, h, d_out };
 }
