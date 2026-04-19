@@ -19,7 +19,7 @@ PIPELINE := pipeline_app
 GEN_IMGS := gen_test_images
 VALIDATE := validate
 
-.PHONY: all test test_images benchmark clean
+.PHONY: all test test_images benchmark gui clean
 
 all: $(PIPELINE) $(GEN_IMGS) $(VALIDATE)
 
@@ -68,6 +68,9 @@ test_cpu: cpu_reference test_images
 	@mv cpu_2_blurred.pgm cpu_pass2_2_blurred.pgm 2>/dev/null || true
 	@mv cpu_3_edges.pgm   cpu_pass2_3_edges.pgm   2>/dev/null || true
 	@ls -lh *.pgm tests/images/test_all.png
+
+gui: $(PIPELINE)
+	python3 gui/gui.py
 
 clean:
 	rm -f $(OBJ_CU) $(OBJ_CPP) $(PIPELINE) $(GEN_IMGS) $(VALIDATE) \

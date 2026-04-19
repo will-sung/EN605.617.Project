@@ -39,69 +39,71 @@ Input image (PPM)
 
 ### Step 1 — Grayscale (`out_1_gray.pgm`)
 
-Uses NPP's `nppiRGBToGray_8u_C3C1R` to convert the 3-channel RGB input to a single 8-bit luminance channel using the standard weighted formula (0.299R + 0.587G + 0.114B). Color information is discarded because subsequent gradient operators only need intensity.
-
-**Output image:** a single-channel grayscale version of the input. Brighter pixels correspond to lighter-colored regions in the original.
+`nppiRGBToGray_8u_C3C1R` — standard luminance weights (0.299R + 0.587G + 0.114B).
 
 ---
 
 ### Step 2 — Gaussian Blur (`out_2_blurred.pgm`)
 
-Uses NPP's `nppiFilterGauss_8u_C1R` with a `(2r+1) × (2r+1)` kernel (default r=3, giving a 7×7 kernel). Blurring reduces high frequency pixel noise before the gradient computation, which prevents spurious single pixel responses from appearing as edges.
-
-**Output image:** a smoothed version of the grayscale image. Fine texture and noise are suppressed, while large scale boundaries are preserved but slightly softened.
+`nppiFilterGauss_8u_C1R` with a `(2r+1) × (2r+1)` kernel (default r=3 → 7×7). Smooths noise before gradient computation.
 
 ---
 
 ### Step 3 — Sobel Edge Detection (`out_3_edges.pgm`)
 
-Runs `nppiFilterSobelHorizBorder` and `nppiFilterSobelVertBorder` (3×3 kernel, 8u→16s, replicated border) to compute the horizontal gradient Gx and vertical gradient Gy. A CUDA kernel then computes the gradient magnitude per pixel: `clamp(sqrt(Gx² + Gy²), 0, 255)` and stores it as 8-bit.
-
-**Output image:** a gradient magnitude map. Bright pixels mark locations of strong intensity change (edges). Flat, uniform regions appear dark. The brighter a pixel, the stronger the edge response at that location.
+`nppiFilterSobelHorizBorder` + `nppiFilterSobelVertBorder` (3×3, 8u→16s, replicated border). A CUDA kernel computes `clamp(sqrt(Gx²+Gy²), 0, 255)` and writes it back as 8-bit.
 
 ---
 
 ### Step 4 — Binary Threshold (`out_4_binary.pgm`)
 
-A CUDA kernel compares each pixel in the Sobel magnitude image to `edge_thresh`. Pixels at or above the threshold are set to 255 (white); all others are set to 0 (black). This isolates only the strongest edges and discards weak gradient noise.
-
-**Output image:** a strictly binary image. White pixels are candidate edge pixels; everything else is black. The density of white pixels is typically 0.5–15% of the total image area.
+CUDA kernel: pixels ≥ `edge_thresh` → 255, rest → 0.
 
 ---
 
 ### Step 5 — Connected Component Labeling (`out_5_labels.pgm`)
 
-Each foreground pixel is initialized to its linear pixel index as a unique label. An iterative GPU kernel then propagates labels: on every pass, each pixel adopts the minimum label among its 8 connected foreground neighbors. Two device buffers alternate (ping-pong) each iteration to avoid read/write races. The loop runs until a device side flag reports no label changed. After convergence, a CPU pass assigns compact sequential IDs and discards components smaller than `CCL_MIN_AREA` pixels (default 50), removing noise specks.
+Each foreground pixel starts with its linear index as a label. An iterative kernel propagates the minimum label across 8-connected neighbors using ping-pong buffers until nothing changes. A CPU pass then compacts the IDs and drops components smaller than `CCL_MIN_AREA` (default 50 px).
 
-**Output image:** each surviving connected edge region is drawn in a distinct gray level (`component_id × 50`, clamped to 255). Background is black (0). This makes it easy to visually verify how many separate shapes were found, one distinct gray shade per detected shape outline.
+Output colors each component `id × 50` (clamped to 255) so separate shapes are visually distinct.
 
 ---
 
 ### Step 6 — Contour Tracing (`out_6_contours.pgm`)
 
-For each labeled component, the CPU locates the topmost leftmost pixel and runs a Moore-neighbor boundary trace. Starting from a backtrack direction of West (direction 4), the algorithm scans the 8 neighbors clockwise, stepping to the first foreground pixel found. The backtrack direction is updated to point from the new pixel back toward the previous background pixel. Tracing ends when the path returns to the starting pixel.
-
-**Output image:** only the traced boundary pixels are drawn in white on a black background. Unlike the binary edge map (which may be several pixels thick), the contour is a single-pixel-wide outline around each component, the exact sequence of points used as input to the Fourier Descriptor step.
+Moore-neighbor boundary trace on each component. Starts at the topmost-leftmost pixel, backtrack direction West, scans neighbors clockwise until the path closes. Result is a single-pixel-wide contour used as input to the FFT step.
 
 ---
 
 ### Step 7 — Fourier Descriptors + Classification (stdout)
 
-Each contour is treated as a 1D complex signal `z[n] = x[n] + j*y[n]`, where x and y are the coordinates of the n-th boundary point. A forward 1D cuFFT (C2C) transforms the sequence into the frequency domain. The spectrum is normalized by `|Z[1]|` to achieve scale and rotation invariance.
+Contour points are packed into a complex signal `z[n] = x[n] + j*y[n]` and transformed with cuFFT (1D C2C). The spectrum is normalized by `|Z[1]|` for scale/rotation invariance. Both `|Z[k]|` and `|Z[N-k]|` are checked to handle either trace direction.
 
-The normalized magnitude of each harmonic reflects the shape's rotational symmetry:
-- **k=2 (or N-2):** large for a triangle — the 3-fold symmetry produces a strong 2nd harmonic
-- **k=3 (or N-3):** large for a rectangle — the 2-fold/4-fold symmetry produces a strong 3rd harmonic
-- **all k>1 small:** characteristic of a circle, which has no discrete angular symmetry
+Key descriptors:
+- `d2 = max(|Z[2]|, |Z[N-2]|)` — strong for triangles
+- `d3 = max(|Z[3]|, |Z[N-3]|)` — strong for rectangles
 
-Both positive and mirror (negative) frequencies are checked (`max(|Z[k]|, |Z[N-k]|)`) to handle contours traced in either direction.
-
-**Classification rule:**
+**Classification:**
 - `d2 > 0.08 && d2 > d3` → **triangle**
 - `d3 > 0.08 && d3 > d2` → **rectangle**
 - otherwise → **circle**
 
-Results are printed to stdout with the label index, contour length, d2/d3 values, and the assigned shape name.
+Results printed to stdout: label index, contour length, d2/d3, shape name.
+
+## GUI
+
+A tkinter-based front-end for running the pipeline interactively.
+
+```bash
+pip install Pillow
+make gui
+```
+
+`make gui` builds `pipeline_app` if needed, then launches the GUI. The left panel has controls for selecting an input image and adjusting blur radius and edge threshold. Clicking **Run Pipeline** executes the pipeline in a background thread and displays the result in the canvas. Use the stage radio buttons to flip between the six intermediate output images. Shape classification results appear in the scrollable text box at the bottom of the panel.
+
+Requires Python 3 with `tkinter` (standard library) and `Pillow`.
+
+---
 
 ## Requirements
 
@@ -210,6 +212,9 @@ pipeline/               source for the GPU pipeline application
   pipeline.h            shared types and declarations
   stb_image.h           stb_image v2.30 (JPEG/PNG/BMP/TGA/GIF/PNM)
 
+gui/
+  gui.py                tkinter GUI front-end
+
 tests/                  test and verification tools
   validate.cpp          checks all six output PGMs
   gen_test_images.cpp   generates 7 test PNGs
@@ -250,6 +255,7 @@ make benchmark
 | `make` / `make all` | Build `pipeline_app`, `gen_test_images`, `validate` |
 | `make test` | Generate test image, run both passes, validate |
 | `make test_images` | Build `gen_test_images` and generate all 7 individual test PPMs |
+| `make gui` | Build `pipeline_app` and launch the GUI |
 | `make benchmark` | Build all binaries and run timing script |
 | `make cpu_reference` | Build CPU-only reference binary |
 | `make test_cpu` | Run CPU reference pipeline on test image |
