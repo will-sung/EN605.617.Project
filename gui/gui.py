@@ -19,6 +19,7 @@ PROJECT_DIR  = os.path.dirname(SCRIPT_DIR)
 PIPELINE_BIN = os.path.join(PROJECT_DIR, "pipeline_app")
 
 STAGES = [
+    ("0 – Input",      None),
     ("1 – Grayscale",  "out_1_gray.pgm"),
     ("2 – Blurred",    "out_2_blurred.pgm"),
     ("3 – Edges",      "out_3_edges.pgm"),
@@ -171,6 +172,7 @@ class App(tk.Tk):
                        ("All files", "*.*")])
         if path:
             self._image_path.set(path)
+            self._show_stage()
 
     def _run_pipeline(self):
         path = self._image_path.get().strip()
@@ -228,13 +230,20 @@ class App(tk.Tk):
         self._show_stage()
 
     def _show_stage(self):
-        if not self._pipeline_ran:
-            return
         _, filename = STAGES[self._stage_idx.get()]
-        path = os.path.join(PROJECT_DIR, filename)
-        if not os.path.exists(path):
-            self._set_status(f"{filename} not found", ERR)
-            return
+
+        if filename is None:
+            path = self._image_path.get().strip()
+            if not path or not os.path.exists(path):
+                return
+        else:
+            if not self._pipeline_ran:
+                return
+            path = os.path.join(PROJECT_DIR, filename)
+            if not os.path.exists(path):
+                self._set_status(f"{filename} not found", ERR)
+                return
+
         try:
             self._raw_image = Image.open(path).copy()
             self._render_image()
@@ -264,7 +273,7 @@ class App(tk.Tk):
         self._canvas.itemconfigure(self._canvas_hint, text="")
 
     def _on_resize(self, _event):
-        if self._pipeline_ran and self._raw_image is not None:
+        if self._raw_image is not None:
             self._render_image()
         else:
             cw = self._canvas.winfo_width()
